@@ -1,19 +1,20 @@
 package com.lucianolupo95.gallery
 
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.lucianolupo95.gallery.ui.theme.GalleryTheme
+import com.lucianolupo95.gallery.viewmodel.GalleryViewModel
+import com.lucianolupo95.gallery.ui.MainScreen
+import com.lucianolupo95.gallery.util.PermissionManager
+
 
 class MainActivity : ComponentActivity() {
+
     private lateinit var permissionManager: PermissionManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,67 +23,33 @@ class MainActivity : ComponentActivity() {
         permissionManager = PermissionManager(this)
         permissionManager.requestPermission()
 
-        val viewModel: GalleryViewModel by viewModels()
-
         setContent {
             GalleryTheme {
+                val viewModel: GalleryViewModel by viewModels()
                 val images by viewModel.images.collectAsState()
 
+                // Si cambia el permiso, actualiza las imágenes
                 LaunchedEffect(permissionManager.hasPermission.value) {
                     if (permissionManager.hasPermission.value) {
+                        viewModel.rescanImages(this@MainActivity) // ← 👈 esto lo agregás
                         viewModel.loadImages()
                     }
                 }
 
+
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier,
                     color = MaterialTheme.colorScheme.background
                 ) {
                     MainScreen(
                         hasPermission = permissionManager.hasPermission.value,
-                        images = images
+                        images = images,
+                        onRequestPermissionClick = {
+                            permissionManager.requestPermission()
+                        }
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun MainScreen(
-    hasPermission: Boolean,
-    images: List<Uri>
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Galería de Mamá",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = if (hasPermission) "✅ Permiso CONCEDIDO" else "❌ Permiso NO concedido",
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (hasPermission) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text("Cantidad de imágenes: ${images.size}")
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    GalleryTheme {
-        MainScreen(
-            hasPermission = false,
-            images = emptyList()
-        )
     }
 }

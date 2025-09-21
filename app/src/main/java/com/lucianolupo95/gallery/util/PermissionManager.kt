@@ -1,4 +1,4 @@
-package com.lucianolupo95.gallery
+package com.lucianolupo95.gallery.util
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -24,7 +24,8 @@ class PermissionManager(private val activity: ComponentActivity) {
         }
 
     fun requestPermission() {
-        val isAlreadyGranted = ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
+        val isAlreadyGranted =
+            ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
 
         if (isAlreadyGranted) {
             hasPermission.value = true
