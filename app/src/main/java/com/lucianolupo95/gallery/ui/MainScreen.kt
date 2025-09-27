@@ -6,14 +6,21 @@ import com.lucianolupo95.gallery.ui.components.ImageGrid
 
 @Composable
 fun MainScreen() {
-    var selectedImage by remember { mutableStateOf<Uri?>(null) }
+    var imageList by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
 
-    if (selectedImage == null) {
-        ImageGrid(onImageClick = { uri -> selectedImage = uri })
+    if (selectedIndex == null) {
+        ImageGrid(
+            onImageClick = { index, uris ->
+                imageList = uris
+                selectedIndex = index
+            }
+        )
     } else {
         ImageDetailScreen(
-            imageUri = selectedImage!!,
-            onBack = { selectedImage = null }
+            imageUris = imageList,
+            startIndex = selectedIndex!!,
+            onBack = { selectedIndex = null }
         )
     }
 }

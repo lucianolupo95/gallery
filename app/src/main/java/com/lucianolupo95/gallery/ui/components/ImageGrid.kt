@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 @Composable
-fun ImageGrid(onImageClick: (Uri) -> Unit) {
+fun ImageGrid(onImageClick: (index: Int, uris: List<Uri>) -> Unit) {
     val context = LocalContext.current
 
     val imageUris = remember {
@@ -46,7 +46,7 @@ fun ImageGrid(onImageClick: (Uri) -> Unit) {
     }
 
     LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.padding(4.dp)) {
-        items(imageUris) { uri ->
+        itemsIndexed(imageUris) { index, uri ->
             AsyncImage(
                 model = uri,
                 contentDescription = null,
@@ -54,7 +54,7 @@ fun ImageGrid(onImageClick: (Uri) -> Unit) {
                 modifier = Modifier
                     .padding(2.dp)
                     .aspectRatio(1f)
-                    .clickable { onImageClick(uri) }
+                    .clickable { onImageClick(index, imageUris) }
             )
         }
     }
