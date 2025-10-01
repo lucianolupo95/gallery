@@ -1,11 +1,8 @@
 package com.lucianolupo95.gallery.ui
 
 import android.net.Uri
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -20,12 +17,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ImageDetailScreen(
     imageUris: List<Uri>,
     startIndex: Int,
-    onBack: () -> Unit
+    onBackClick: () -> Unit // 👈 nombre correcto
 ) {
     val pagerState = rememberPagerState(initialPage = startIndex) { imageUris.size }
 
@@ -44,7 +40,7 @@ fun ImageDetailScreen(
         }
 
         IconButton(
-            onClick = onBack,
+            onClick = onBackClick,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp)
