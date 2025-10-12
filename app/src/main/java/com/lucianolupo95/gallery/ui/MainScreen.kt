@@ -14,35 +14,55 @@ import com.lucianolupo95.gallery.ui.components.ImageGrid
 fun MainScreen(
     hasPermission: Boolean,
     images: List<Uri>,
-    onImageClick: (Int, List<Uri>) -> Unit, // 👈 ahora igual que ImageGrid
+    onImageClick: (Int) -> Unit,
     onRequestPermissionClick: () -> Unit
 ) {
-    if (!hasPermission) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "🚫 Permisos no concedidos",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "Para acceder a tus imágenes, necesitamos tu permiso.",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = onRequestPermissionClick) {
-                Text("Conceder permiso")
+    when {
+        !hasPermission -> {
+            // 🚫 Sin permisos
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "🚫 Permisos no concedidos",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Para acceder a tus imágenes, necesitamos tu permiso.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = onRequestPermissionClick) {
+                    Text("Conceder permiso")
+                }
             }
         }
-    } else {
-        ImageGrid(images = images, onImageClick = onImageClick) // 👈 mismo tipo
+
+        images.isEmpty() -> {
+            // 📁 No hay imágenes
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No se encontraron imágenes 📷",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+
+        else -> {
+            // ✅ Mostrar galería
+            ImageGrid(images = images, onImageClick = onImageClick)
+        }
     }
 }

@@ -7,59 +7,35 @@ import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import android.content.Context
-import android.media.MediaScannerConnection
-import android.os.Environment
 
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _images = MutableStateFlow<List<Uri>>(emptyList())
     val images = _images.asStateFlow()
 
+    /** Carga todas las imágenes del dispositivo (más recientes primero). */
     fun loadImages() {
-        val imageList = mutableListOf<Uri>()
-        val contentResolver = getApplication<Application>().contentResolver
+        val list = mutableListOf<Uri>()
+        val cr = getApplication<Application>().contentResolver
 
-        val projection = arrayOf(
-            MediaStore.Images.Media._ID
-        )
-
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(MediaStore.Images.Media._ID)
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
-        val query = contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            null,
-            null,
-            sortOrder
-        )
-
-        query?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-
+        cr.query(collection, projection, null, null, sortOrder)?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             while (cursor.moveToNext()) {
-                val id = cursor.getLong(idColumn)
-                val contentUri = ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    id
-                )
-                imageList.add(contentUri)
+                val id = cursor.getLong(idCol)
+                val uri = ContentUris.withAppendedId(collection, id)
+                list.add(uri)
             }
-
-            _images.value = imageList
         }
-    }
-    fun rescanImages(context: Context) {
-        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
 
-        picturesDir.listFiles()?.forEach { file ->
-            MediaScannerConnection.scanFile(
-                context,
-                arrayOf(file.absolutePath),
-                null,
-                null
-            )
-        }
+        _images.value = list
     }
 
+    /**
+     * Elimina la imagen del MediaStore y actualiza el estado local.
+     * Nota: En Android 11+ puede requerir consentimiento del usuario para ciertos archivos.
+     */
 }
