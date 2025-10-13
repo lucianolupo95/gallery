@@ -38,9 +38,14 @@ class MainActivity : ComponentActivity() {
                 val images by viewModel.images.collectAsState()
                 val folders by viewModel.folders.collectAsState()
                 var selectedIndex by remember { mutableStateOf<Int?>(null) }
+
+                // 🔹 Estado actual
+                var currentFolder by remember { mutableStateOf<String?>(null) }
+                var showFolders by remember { mutableStateOf(true) }
+
                 val scope = rememberCoroutineScope()
 
-                // 🔹 Cargar imágenes y carpetas cuando se otorgan permisos
+                // 🔹 Cargar contenido al conceder permisos
                 LaunchedEffect(permissionManager.hasPermission.value) {
                     if (permissionManager.hasPermission.value) {
                         viewModel.loadFolders()
@@ -54,7 +59,12 @@ class MainActivity : ComponentActivity() {
                 ) { _ ->
                     scope.launch(Dispatchers.Main) {
                         delay(300)
-                        viewModel.loadImages()
+                        if (currentFolder == null) {
+                            viewModel.loadImages()
+                        } else {
+                            viewModel.loadImagesFromFolder(currentFolder!!)
+                        }
+                        showFolders = false
                         Toast.makeText(
                             this@MainActivity,
                             "🗑️ Imagen eliminada (recargando galería)",
@@ -105,7 +115,12 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                     selectedIndex = null
                                                     delay(300)
-                                                    viewModel.loadImages()
+                                                    if (currentFolder == null) {
+                                                        viewModel.loadImages()
+                                                    } else {
+                                                        viewModel.loadImagesFromFolder(currentFolder!!)
+                                                    }
+                                                    showFolders = false
                                                 }
                                             }
                                         }
@@ -134,10 +149,21 @@ class MainActivity : ComponentActivity() {
                             onRequestPermissionClick = { permissionManager.requestPermission() },
                             folders = folders,
                             onFolderClick = { folderName ->
+                                currentFolder = folderName
                                 viewModel.loadImagesFromFolder(folderName)
+                                showFolders = false
                             },
                             onShowAllClick = {
+                                currentFolder = null
                                 viewModel.loadImages()
+                                showFolders = false // ⬅️ esto asegura el cambio de vista
+                            },
+                            showFolders = showFolders,
+                            onToggleView = {
+                                showFolders = !showFolders
+                                if (showFolders) {
+                                    viewModel.loadFolders()
+                                }
                             }
                         )
                     }

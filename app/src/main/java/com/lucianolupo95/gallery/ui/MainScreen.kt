@@ -3,7 +3,7 @@ package com.lucianolupo95.gallery.ui
 import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -20,13 +20,12 @@ fun MainScreen(
     onRequestPermissionClick: () -> Unit,
     folders: List<GalleryFolder>,
     onFolderClick: (String) -> Unit,
-    onShowAllClick: () -> Unit
+    onShowAllClick: () -> Unit,
+    showFolders: Boolean,
+    onToggleView: () -> Unit
 ) {
-    var showFolders by remember { mutableStateOf(true) }
-
     when {
         !hasPermission -> {
-            // 🚫 Sin permisos
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -54,7 +53,6 @@ fun MainScreen(
         }
 
         showFolders -> {
-            // 📁 Vista de carpetas
             Column(Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
@@ -62,10 +60,7 @@ fun MainScreen(
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Button(onClick = {
-                        showFolders = false
-                        onShowAllClick()
-                    }) {
+                    Button(onClick = onShowAllClick, modifier = Modifier.padding(8.dp)) {
                         Text("Ver todas las fotos")
                     }
                 }
@@ -76,7 +71,6 @@ fun MainScreen(
                     }
                 } else {
                     FolderGrid(folders = folders, onFolderClick = { folderName ->
-                        showFolders = false
                         onFolderClick(folderName)
                     })
                 }
@@ -84,7 +78,6 @@ fun MainScreen(
         }
 
         images.isEmpty() -> {
-            // 📷 No hay imágenes
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -96,15 +89,12 @@ fun MainScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Button(onClick = { showFolders = true }) {
-                        Text("Volver a carpetas")
-                    }
+                    Button(onClick = onToggleView) { Text("Volver a carpetas") }
                 }
             }
         }
 
         else -> {
-            // ✅ Mostrar imágenes
             Column {
                 Row(
                     modifier = Modifier
@@ -112,7 +102,7 @@ fun MainScreen(
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Button(onClick = { showFolders = true }) {
+                    Button(onClick = onToggleView, modifier = Modifier.padding(8.dp)) {
                         Text("Volver a carpetas")
                     }
                 }
