@@ -36,11 +36,14 @@ class MainActivity : ComponentActivity() {
             GalleryTheme {
                 val viewModel: GalleryViewModel by viewModels()
                 val images by viewModel.images.collectAsState()
+                val folders by viewModel.folders.collectAsState()
                 var selectedIndex by remember { mutableStateOf<Int?>(null) }
                 val scope = rememberCoroutineScope()
 
+                // 🔹 Cargar imágenes y carpetas cuando se otorgan permisos
                 LaunchedEffect(permissionManager.hasPermission.value) {
                     if (permissionManager.hasPermission.value) {
+                        viewModel.loadFolders()
                         viewModel.loadImages()
                     }
                 }
@@ -49,7 +52,6 @@ class MainActivity : ComponentActivity() {
                 val deleteLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartIntentSenderForResult()
                 ) { _ ->
-                    // No dependemos de RESULT_OK porque algunos emuladores no lo devuelven bien
                     scope.launch(Dispatchers.Main) {
                         delay(300)
                         viewModel.loadImages()
@@ -129,7 +131,14 @@ class MainActivity : ComponentActivity() {
                             hasPermission = permissionManager.hasPermission.value,
                             images = images,
                             onImageClick = { index -> selectedIndex = index },
-                            onRequestPermissionClick = { permissionManager.requestPermission() }
+                            onRequestPermissionClick = { permissionManager.requestPermission() },
+                            folders = folders,
+                            onFolderClick = { folderName ->
+                                viewModel.loadImagesFromFolder(folderName)
+                            },
+                            onShowAllClick = {
+                                viewModel.loadImages()
+                            }
                         )
                     }
                 }
