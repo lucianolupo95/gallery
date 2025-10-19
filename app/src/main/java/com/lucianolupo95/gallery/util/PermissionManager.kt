@@ -1,36 +1,44 @@
 package com.lucianolupo95.gallery.util
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+import android.os.Environment
+import android.provider.Settings
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 
-class PermissionManager(private val activity: ComponentActivity) {
-
+class PermissionManager(private val activity: Activity) {
     val hasPermission = mutableStateOf(false)
 
-    private val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Manifest.permission.READ_MEDIA_IMAGES
-    } else {
-        Manifest.permission.READ_EXTERNAL_STORAGE
-    }
-
-    private val requestPermissionLauncher =
-        activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            hasPermission.value = isGranted
-        }
-
     fun requestPermission() {
-        val isAlreadyGranted =
-            ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
+        when {
+            // ✅ Android 11+ (R / API 30 en adelante)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                if (!Environment.isExternalStorageManager()) {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:" + activity.packageName)
+                    activity.startActivity(intent)
+                } else {
+                    hasPermission.value = true
+                }
+            }
 
-        if (isAlreadyGranted) {
-            hasPermission.value = true
-        } else {
-            requestPermissionLauncher.launch(permission)
+            // ✅ Android 10 o menor
+            else -> {
+                val permission = Manifest.permission.READ_EXTERNAL_STORAGE
+
+                if (ContextCompat.checkSelfPermission(activity, permission)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    hasPermission.value = true
+                } else {
+                    activity.requestPermissions(arrayOf(permission), 0)
+                }
+            }
         }
     }
 }

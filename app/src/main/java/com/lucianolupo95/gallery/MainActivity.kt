@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                             onShowAllClick = {
                                 currentFolder = null
                                 viewModel.loadImages()
-                                showFolders = false // ⬅️ esto asegura el cambio de vista
+                                showFolders = false
                             },
                             showFolders = showFolders,
                             onToggleView = {
@@ -164,6 +164,31 @@ class MainActivity : ComponentActivity() {
                                 if (showFolders) {
                                     viewModel.loadFolders()
                                 }
+                            },
+                            // 🔹 NUEVOS callbacks de carpetas
+                            onCreateFolder = { name ->
+                                val success = viewModel.createFolder(name)
+                                Toast.makeText(
+                                    this,
+                                    if (success) "📁 Carpeta '$name' creada" else "⚠️ Error al crear carpeta",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onDeleteFolder = { name ->
+                                val success = viewModel.deleteFolder(name)
+                                Toast.makeText(
+                                    this,
+                                    if (success) "🗑️ Carpeta '$name' eliminada" else "⚠️ No se pudo eliminar carpeta",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onRenameFolder = { oldName, newName ->
+                                val success = viewModel.renameFolder(oldName, newName)
+                                Toast.makeText(
+                                    this,
+                                    if (success) "✏️ Carpeta renombrada" else "⚠️ Error al renombrar carpeta",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         )
                     }

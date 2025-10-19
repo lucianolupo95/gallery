@@ -22,7 +22,10 @@ fun MainScreen(
     onFolderClick: (String) -> Unit,
     onShowAllClick: () -> Unit,
     showFolders: Boolean,
-    onToggleView: () -> Unit
+    onToggleView: () -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onDeleteFolder: (String) -> Unit,
+    onRenameFolder: (String, String) -> Unit
 ) {
     when {
         !hasPermission -> {
@@ -53,6 +56,7 @@ fun MainScreen(
         }
 
         showFolders -> {
+            // 📁 Vista de carpetas
             Column(Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier
@@ -65,18 +69,15 @@ fun MainScreen(
                     }
                 }
 
-                if (folders.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No se encontraron carpetas 📂")
-                    }
-                } else {
-                    FolderGrid(folders = folders, onFolderClick = { folderName ->
-                        onFolderClick(folderName)
-                    })
-                }
+                FolderGrid(
+                    folders = folders,
+                    onFolderClick = onFolderClick,
+                    onCreateFolder = onCreateFolder,
+                    onDeleteFolder = onDeleteFolder,
+                    onRenameFolder = onRenameFolder
+                )
             }
         }
-
         images.isEmpty() -> {
             Box(
                 modifier = Modifier.fillMaxSize(),
