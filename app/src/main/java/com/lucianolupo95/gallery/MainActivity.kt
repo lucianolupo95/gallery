@@ -12,20 +12,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.lucianolupo95.gallery.ui.ImageDetailScreen
 import com.lucianolupo95.gallery.ui.MainScreen
 import com.lucianolupo95.gallery.ui.theme.GalleryTheme
 import com.lucianolupo95.gallery.util.PermissionManager
 import com.lucianolupo95.gallery.viewmodel.GalleryViewModel
 import kotlinx.coroutines.*
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.ui.unit.dp
-
 
 class MainActivity : ComponentActivity() {
 
@@ -38,6 +37,8 @@ class MainActivity : ComponentActivity() {
         permissionManager.requestPermission()
 
         setContent {
+            var isSelectionMode by remember { mutableStateOf(false) }
+
             GalleryTheme {
                 val viewModel: GalleryViewModel by viewModels()
                 val images by viewModel.images.collectAsState()
@@ -52,7 +53,7 @@ class MainActivity : ComponentActivity() {
 
                 val scope = rememberCoroutineScope()
 
-                // 🔹 Cargar contenido tras permisos
+                // Cargar datos tras permisos
                 LaunchedEffect(permissionManager.hasPermission.value) {
                     if (permissionManager.hasPermission.value) {
                         viewModel.loadFolders()
@@ -60,7 +61,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // 🔹 Launcher para borrado (necesario para Android 11+)
+                // Launcher para borrado (Android 11+)
                 val deleteLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartIntentSenderForResult()
                 ) { _ ->
@@ -79,7 +80,7 @@ class MainActivity : ComponentActivity() {
 
                 Surface(modifier = Modifier, color = MaterialTheme.colorScheme.background) {
                     when {
-                        // 🖼️ Vista de detalle (imagen abierta)
+                        // Vista de detalle
                         selectedIndex != null -> {
                             ImageDetailScreen(
                                 imageUris = images,
@@ -100,8 +101,7 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             } else {
                                                 withContext(Dispatchers.IO) {
-                                                    val deleted =
-                                                        contentResolver.delete(uri, null, null)
+                                                    val deleted = contentResolver.delete(uri, null, null)
                                                     withContext(Dispatchers.Main) {
                                                         if (deleted > 0) {
                                                             Toast.makeText(
@@ -144,28 +144,45 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 🏞️ Vista normal (carpetas o galería)
+                        // Vista normal (carpetas o galería)
                         else -> {
                             MainScreen(
                                 hasPermission = permissionManager.hasPermission.value,
                                 images = images,
                                 selectedImages = selectedImages,
-                                onImageClick = { index -> selectedIndex = index },
+                                onImageClick = { index ->
+                                    if (isSelectionMode) {
+                                        // Selección directa si ya hay selección
+                                        val image = images[index]
+                                        selectedImages = if (selectedImages.contains(image)) {
+                                            selectedImages - image
+                                        } else {
+                                            selectedImages + image
+                                        }
+                                    } else {
+                                        selectedIndex = index
+                                    }
+                                },
                                 onRequestPermissionClick = { permissionManager.requestPermission() },
                                 folders = folders,
                                 onFolderClick = { folderName ->
                                     currentFolder = folderName
                                     showFolders = false
                                     viewModel.loadImagesFromFolder(folderName)
+                                    selectedImages = emptyList()
+                                    isSelectionMode = false
                                 },
                                 onShowAllClick = {
                                     currentFolder = null
                                     viewModel.loadImages()
                                     showFolders = false
+                                    selectedImages = emptyList()
+                                    isSelectionMode = false
                                 },
                                 showFolders = showFolders,
                                 onBackClick = {
                                     selectedImages = emptyList()
+                                    isSelectionMode = false
                                     currentFolder = null
                                     showFolders = true
                                     viewModel.loadFolders()
@@ -199,21 +216,27 @@ class MainActivity : ComponentActivity() {
                                 },
                                 currentFolder = currentFolder,
                                 onSelectionChange = { selectedImages = it },
-                                onMoveSelectedClick = { showMoveDialog = true },
-                                onCancelSelection = { selectedImages = emptyList() }
+                                onMoveSelectedClick = {
+                                    if (selectedImages.isNotEmpty()) showMoveDialog = true
+                                },
+                                onCancelSelection = {
+                                    selectedImages = emptyList()
+                                    isSelectionMode = false
+                                },
+                                isSelectionMode = isSelectionMode,
+                                onToggleSelectionMode = { isSelectionMode = !isSelectionMode },
+                                onSelectionModeChange = { mode -> isSelectionMode = mode }
                             )
 
-// 🔹 Diálogo de mover imágenes
+                            // 🔹 Diálogo de "Mover a carpeta"
                             if (showMoveDialog && selectedImages.isNotEmpty()) {
                                 AlertDialog(
                                     onDismissRequest = { showMoveDialog = false },
                                     title = { Text("Mover a carpeta") },
                                     text = {
-                                        Text("Selecciona la carpeta de destino:")
-                                    },
-                                    confirmButton = {
-                                        // ✅ Ahora el bloque composable está dentro de confirmButton
                                         Column {
+                                            Text("Seleccioná la carpeta de destino:")
+                                            Spacer(modifier = Modifier.height(8.dp))
                                             folders.forEach { folder ->
                                                 TextButton(onClick = {
                                                     scope.launch {
@@ -228,9 +251,13 @@ class MainActivity : ComponentActivity() {
                                                                 "⚠️ Error al mover imágenes",
                                                             Toast.LENGTH_SHORT
                                                         ).show()
+
+                                                        // Cerrar diálogo y limpiar selección/modo
                                                         showMoveDialog = false
                                                         selectedImages = emptyList()
+                                                        isSelectionMode = false
 
+                                                        // Refrescar vista actual SIN cambiar de carpeta
                                                         if (currentFolder == null)
                                                             viewModel.loadImages()
                                                         else
@@ -242,16 +269,15 @@ class MainActivity : ComponentActivity() {
                                                     Text(folder.name)
                                                 }
                                             }
-
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            TextButton(onClick = { showMoveDialog = false }) {
-                                                Text("Cancelar", color = MaterialTheme.colorScheme.error)
-                                            }
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = { showMoveDialog = false }) {
+                                            Text("Cancelar")
                                         }
                                     }
                                 )
                             }
-
                         }
                     }
                 }

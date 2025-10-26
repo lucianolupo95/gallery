@@ -1,3 +1,5 @@
+@file:Suppress("UNUSED_PARAMETER")
+
 package com.lucianolupo95.gallery.ui
 
 import android.net.Uri
@@ -33,9 +35,17 @@ fun MainScreen(
     currentFolder: String? = null,
     onSelectionChange: (List<Uri>) -> Unit,
     onMoveSelectedClick: () -> Unit,
-    onCancelSelection: () -> Unit
+    onCancelSelection: () -> Unit,
+    isSelectionMode: Boolean,
+    onToggleSelectionMode: () -> Unit,
+    onSelectionModeChange: (Boolean) -> Unit
+
 ) {
+    // Creamos una copia local del modo selección para poder modificarlo
+    var localSelectionMode = isSelectionMode
+
     when {
+        // 🚫 Vista sin permisos
         !hasPermission -> {
             Column(
                 modifier = Modifier
@@ -51,12 +61,19 @@ fun MainScreen(
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Para acceder a tus imágenes, necesitamos tu permiso.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
                 Button(onClick = onRequestPermissionClick) {
                     Text("Conceder permiso")
                 }
             }
         }
 
+        // 📁 Vista de carpetas
         showFolders -> {
             Column(modifier = Modifier.fillMaxSize()) {
                 TopAppBar(
@@ -75,46 +92,62 @@ fun MainScreen(
             }
         }
 
+        // 📷 Vista de imágenes
         else -> {
             Column {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = currentFolder ?: "Imágenes",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        if (localSelectionMode) {
+                            Text("${selectedImages.size} seleccionada(s)")
+                        } else {
+                            Text(currentFolder ?: "Imágenes")
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver atrás",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                contentDescription = "Volver atrás"
                             )
                         }
                     },
-                    // 🔹 Mostrar "Ver todas" solo si NO estamos dentro de una carpeta
                     actions = {
-                        if (currentFolder == null) {
-                            TextButton(onClick = onShowAllClick) {
-                                Text("Ver todas", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        if (localSelectionMode) {
+                            TextButton(onClick = onMoveSelectedClick) {
+                                Text("Mover", color = MaterialTheme.colorScheme.primary)
+                            }
+                            TextButton(onClick = onCancelSelection) {
+                                Text("Cancelar", color = MaterialTheme.colorScheme.error)
+                            }
+                        } else {
+                            TextButton(onClick = onToggleSelectionMode) {
+                                Text("Seleccionar", color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
-
 
                 ImageGrid(
                     images = images,
                     selectedImages = selectedImages,
                     onImageClick = onImageClick,
-                    onSelectionChange = onSelectionChange,
+                    onSelectionChange = {
+                        onSelectionChange(it)
+                        val mode = it.isNotEmpty()
+                        localSelectionMode = mode
+                        onSelectionModeChange(mode) // 👈 sincroniza con MainActivity
+                    },
                     onMoveSelectedClick = onMoveSelectedClick,
-                    onCancelSelection = onCancelSelection
+                    onCancelSelection = {
+                        localSelectionMode = false
+                        onSelectionModeChange(false) // 👈 limpia el modo global
+                        onCancelSelection()
+                    }
                 )
+
             }
         }
     }
