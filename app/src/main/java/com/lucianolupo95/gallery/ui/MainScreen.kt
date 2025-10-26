@@ -2,14 +2,16 @@ package com.lucianolupo95.gallery.ui
 
 import android.net.Uri
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.lucianolupo95.gallery.ui.components.ImageGrid
 import com.lucianolupo95.gallery.ui.components.FolderGrid
+import com.lucianolupo95.gallery.ui.components.ImageGrid
 import com.lucianolupo95.gallery.viewmodel.GalleryFolder
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -17,28 +19,24 @@ import com.lucianolupo95.gallery.viewmodel.GalleryFolder
 fun MainScreen(
     hasPermission: Boolean,
     images: List<Uri>,
-    selectedImages: List<Uri>, // ✅ agregado
+    selectedImages: List<Uri>,
     onImageClick: (Int) -> Unit,
     onRequestPermissionClick: () -> Unit,
     folders: List<GalleryFolder>,
     onFolderClick: (String) -> Unit,
     onShowAllClick: () -> Unit,
     showFolders: Boolean,
-    onToggleView: () -> Unit,
-    // ⬇️ Passthroughs
+    onBackClick: () -> Unit,
     onCreateFolder: (String) -> Unit,
     onDeleteFolder: (String) -> Unit,
     onRenameFolder: (String, String) -> Unit,
-    // Para mostrar “← Atrás” con el nombre de carpeta
     currentFolder: String? = null,
-    // ✅ Callbacks de selección múltiple
     onSelectionChange: (List<Uri>) -> Unit,
     onMoveSelectedClick: () -> Unit,
     onCancelSelection: () -> Unit
 ) {
     when {
         !hasPermission -> {
-            // 🚫 Sin permisos
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -53,12 +51,6 @@ fun MainScreen(
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Para acceder a tus imágenes, necesitamos tu permiso.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
                 Button(onClick = onRequestPermissionClick) {
                     Text("Conceder permiso")
                 }
@@ -66,18 +58,13 @@ fun MainScreen(
         }
 
         showFolders -> {
-            // 📁 Vista de carpetas
             Column(modifier = Modifier.fillMaxSize()) {
                 TopAppBar(
                     title = { Text("Carpetas") },
-                    actions = {
-                        TextButton(onClick = onShowAllClick) { Text("Ver todas las fotos") }
-                    },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
                 )
-
                 FolderGrid(
                     folders = folders,
                     onFolderClick = onFolderClick,
@@ -89,24 +76,40 @@ fun MainScreen(
         }
 
         else -> {
-            // 📷 Vista de galería
             Column {
-                if (currentFolder != null) {
-                    TopAppBar(
-                        title = { Text(currentFolder) },
-                        navigationIcon = {
-                            TextButton(onClick = { onToggleView() }) { Text("← Atrás") }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = currentFolder ?: "Imágenes",
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver atrás",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    },
+                    // 🔹 Mostrar "Ver todas" solo si NO estamos dentro de una carpeta
+                    actions = {
+                        if (currentFolder == null) {
+                            TextButton(onClick = onShowAllClick) {
+                                Text("Ver todas", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
-                }
+                )
 
-                // ✅ Mostrar galería
+
                 ImageGrid(
                     images = images,
-                    selectedImages = selectedImages, // 👈 agregado
+                    selectedImages = selectedImages,
                     onImageClick = onImageClick,
                     onSelectionChange = onSelectionChange,
                     onMoveSelectedClick = onMoveSelectedClick,
