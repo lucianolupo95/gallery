@@ -105,6 +105,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 
         Log.d(logTag, "Cargadas ${folderList.size} carpetas detectadas")
         _folders.value = folderList.sortedByDescending { it.imageCount }
+
         // 🔹 Buscar carpetas físicas en /Pictures que estén vacías y no aparezcan en MediaStore
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         picturesDir.listFiles()?.forEach { folder ->
@@ -117,6 +118,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // 🔹 Crear carpeta
     fun createFolder(folderName: String): Boolean {
         return try {
             if (folderName.isBlank()) {
@@ -138,28 +140,24 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 return false
             }
 
-            // Forzar escaneo del sistema de medios
             MediaScannerConnection.scanFile(
                 getApplication(),
                 arrayOf(newFolder.absolutePath),
                 null
             ) { path, uri ->
-                Log.d("GalleryViewModel", "Escaneada carpeta: $path -> $uri")
+                Log.d(logTag, "Escaneada carpeta: $path -> $uri")
             }
 
             Toast.makeText(getApplication(), "📁 Carpeta '$folderName' creada con éxito", Toast.LENGTH_SHORT).show()
 
-            // Refrescar lista de carpetas en la UI
             loadFolders()
-
             true
         } catch (e: Exception) {
             Toast.makeText(getApplication(), "⚠️ Error al crear carpeta: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-            Log.e("GalleryViewModel", "Error al crear carpeta", e)
+            Log.e(logTag, "Error al crear carpeta", e)
             false
         }
     }
-
 
     // 🔹 Eliminar carpeta (borra físicamente)
     fun deleteFolder(folderName: String): Boolean {
@@ -220,4 +218,71 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             false
         }
     }
+
+    fun moveImagesToFolder(uris: List<Uri>, targetFolderName: String): Boolean {
+        return try {
+            val app = getApplication<Application>()
+            val resolver = app.contentResolver
+            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            val targetDir = File(picturesDir, targetFolderName)
+
+            if (!targetDir.exists()) {
+                showToast("⚠️ Carpeta destino no encontrada")
+                return false
+            }
+
+            var movedCount = 0
+
+            for (uri in uris) {
+                try {
+                    // Obtener nombre del archivo original desde MediaStore
+                    val name = resolver.query(
+                        uri,
+                        arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
+                        null, null, null
+                    )?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                        cursor.moveToFirst()
+                        cursor.getString(nameIndex)
+                    } ?: continue
+
+                    val inputStream = resolver.openInputStream(uri) ?: continue
+                    val outputFile = File(targetDir, name)
+                    val outputStream = outputFile.outputStream()
+
+                    inputStream.use { input ->
+                        outputStream.use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    // Borrar original
+                    resolver.delete(uri, null, null)
+                    movedCount++
+
+                    // Escanear archivo nuevo
+                    MediaScannerConnection.scanFile(app, arrayOf(outputFile.absolutePath), null, null)
+
+                } catch (e: Exception) {
+                    Log.e(logTag, "Error al mover imagen: ${e.localizedMessage}")
+                }
+            }
+
+            if (movedCount > 0) {
+                loadFolders()
+                loadImages()
+                showToast("📂 $movedCount imagen(es) movida(s) a '$targetFolderName'")
+                true
+            } else {
+                showToast("⚠️ No se movió ninguna imagen (restricciones del sistema o URIs inválidas)")
+                false
+            }
+
+        } catch (e: Exception) {
+            showToast("⚠️ Error al mover imágenes: ${e.localizedMessage}")
+            Log.e(logTag, "Error al mover imágenes", e)
+            false
+        }
+    }
+
 }
