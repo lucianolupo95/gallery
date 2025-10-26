@@ -62,6 +62,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.core.ktx)
 
+    implementation("androidx.compose.material:material-icons-extended")
+
+
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // 📷 Coil
     implementation("io.coil-kt:coil-compose:2.5.0") // → aún no lo movimos a TOML, si querés lo hacemos
 

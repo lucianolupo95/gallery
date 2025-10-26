@@ -38,7 +38,8 @@ fun MainScreen(
     onCancelSelection: () -> Unit,
     isSelectionMode: Boolean,
     onToggleSelectionMode: () -> Unit,
-    onSelectionModeChange: (Boolean) -> Unit
+    onSelectionModeChange: (Boolean) -> Unit,
+    isSdStorage: Boolean = false
 
 ) {
     // Creamos una copia local del modo selección para poder modificarlo

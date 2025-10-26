@@ -1,25 +1,25 @@
 package com.lucianolupo95.gallery.viewmodel
 
 import android.app.Application
-import android.content.ContentUris
+import android.content.ContentResolver
+import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
-import android.provider.MediaStore
-import android.util.Log
-import android.widget.Toast
+import android.provider.OpenableColumns
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
+import java.io.OutputStream
 
-data class GalleryFolder(
-    val name: String,
-    val imageCount: Int,
-    val thumbnailUri: Uri?
-)
-
-class GalleryViewModel(app: Application) : AndroidViewModel(app) {
+class GalleryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _images = MutableStateFlow<List<Uri>>(emptyList())
     val images = _images.asStateFlow()
@@ -27,262 +27,221 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val _folders = MutableStateFlow<List<GalleryFolder>>(emptyList())
     val folders = _folders.asStateFlow()
 
-    private val logTag = "GalleryViewModel"
+    private val context: Context get() = getApplication<Application>().applicationContext
+    var sdCardUri: Uri? = null
 
-    // 🔹 Helper para mostrar errores
-    private fun showToast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
-        Log.e(logTag, message)
-    }
+    // ------------------ Helpers ------------------
 
-    // 🔹 Cargar imágenes (todas)
-    fun loadImages() {
-        loadImagesFromFolder(null)
-    }
-
-    // 🔹 Cargar imágenes por carpeta
-    fun loadImagesFromFolder(folderName: String?) {
-        val imageList = mutableListOf<Uri>()
-        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.BUCKET_DISPLAY_NAME
-        )
-
-        val selection = if (folderName != null)
-            "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ?"
-        else null
-        val selectionArgs = if (folderName != null) arrayOf(folderName) else null
-        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
-
-        getApplication<Application>().contentResolver.query(
-            collection, projection, selection, selectionArgs, sortOrder
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val uri = ContentUris.withAppendedId(collection, id)
-                imageList.add(uri)
-            }
+    private fun openInputStreamSmart(uri: Uri): InputStream? =
+        when (uri.scheme) {
+            "content" -> context.contentResolver.openInputStream(uri)
+            "file" -> uri.path?.let { FileInputStream(File(it)) }
+            else -> null
         }
 
-        Log.d(logTag, "Cargadas ${imageList.size} imágenes de ${folderName ?: "todas"}")
-        _images.value = imageList
+    private fun getDisplayNameSmart(uri: Uri): String =
+        when (uri.scheme) {
+            "content" -> {
+                var name: String? = null
+                context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    if (it.moveToFirst()) name = it.getString(0)
+                }
+                name ?: "imagen.jpg"
+            }
+            "file" -> File(uri.path ?: "").name.ifBlank { "imagen.jpg" }
+            else -> "imagen.jpg"
+        }
+
+    private fun scanPaths(vararg paths: String) {
+        if (paths.isNotEmpty())
+            MediaScannerConnection.scanFile(context, paths, null, null)
     }
 
-    // 🔹 Cargar carpetas desde MediaStore
+    // ------------------ Carpetas ------------------
+
     fun loadFolders() {
-        val folderList = mutableListOf<GalleryFolder>()
-        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
-        val bucketColumn = MediaStore.Images.Media.BUCKET_DISPLAY_NAME
-        val foldersMap = mutableMapOf<String, Pair<Int, Uri?>>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = mutableListOf<GalleryFolder>()
 
-        getApplication<Application>().contentResolver.query(
-            collection, arrayOf(
-                MediaStore.Images.Media._ID,
-                bucketColumn
-            ), null, null, sortOrder
-        )?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-            val bucketCol = cursor.getColumnIndexOrThrow(bucketColumn)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val bucket = cursor.getString(bucketCol) ?: "Desconocida"
-                if (!foldersMap.containsKey(bucket)) {
-                    val uri = ContentUris.withAppendedId(collection, id)
-                    foldersMap[bucket] = Pair(1, uri)
-                } else {
-                    val (count, thumb) = foldersMap[bucket]!!
-                    foldersMap[bucket] = Pair(count + 1, thumb)
-                }
-            }
-        }
+            // Interno
+            val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            val internal = pictures.listFiles()
+                ?.filter { it.isDirectory && !it.name.startsWith(".") && !it.name.equals("thumbnails", true) }
+                ?.mapNotNull { dir ->
+                    val imgs = dir.listFiles()
+                        ?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png","webp") }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?: emptyList()
+                    if (imgs.isEmpty()) null else GalleryFolder(
+                        name = dir.name,
+                        path = dir.absolutePath,
+                        thumbnailUri = Uri.fromFile(imgs.first()),
+                        imageCount = imgs.size
+                    )
+                } ?: emptyList()
+            result += internal
 
-        foldersMap.forEach { (name, data) ->
-            folderList.add(GalleryFolder(name, data.first, data.second))
-        }
-
-        Log.d(logTag, "Cargadas ${folderList.size} carpetas detectadas")
-        _folders.value = folderList.sortedByDescending { it.imageCount }
-
-        // 🔹 Buscar carpetas físicas en /Pictures que estén vacías y no aparezcan en MediaStore
-        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        picturesDir.listFiles()?.forEach { folder ->
-            if (folder.isDirectory) {
-                val exists = folderList.any { it.name == folder.name }
-                if (!exists) {
-                    folderList.add(GalleryFolder(folder.name, 0, null))
-                }
-            }
-        }
-    }
-
-    // 🔹 Crear carpeta
-    fun createFolder(folderName: String): Boolean {
-        return try {
-            if (folderName.isBlank()) {
-                Toast.makeText(getApplication(), "⚠️ Nombre de carpeta vacío", Toast.LENGTH_SHORT).show()
-                return false
-            }
-
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val newFolder = File(picturesDir, folderName)
-
-            if (newFolder.exists()) {
-                Toast.makeText(getApplication(), "⚠️ Ya existe una carpeta con ese nombre", Toast.LENGTH_SHORT).show()
-                return false
-            }
-
-            val created = newFolder.mkdirs()
-            if (!created) {
-                Toast.makeText(getApplication(), "⚠️ No se pudo crear la carpeta (permiso o restricción del sistema)", Toast.LENGTH_LONG).show()
-                return false
-            }
-
-            MediaScannerConnection.scanFile(
-                getApplication(),
-                arrayOf(newFolder.absolutePath),
-                null
-            ) { path, uri ->
-                Log.d(logTag, "Escaneada carpeta: $path -> $uri")
-            }
-
-            Toast.makeText(getApplication(), "📁 Carpeta '$folderName' creada con éxito", Toast.LENGTH_SHORT).show()
-
-            loadFolders()
-            true
-        } catch (e: Exception) {
-            Toast.makeText(getApplication(), "⚠️ Error al crear carpeta: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-            Log.e(logTag, "Error al crear carpeta", e)
-            false
-        }
-    }
-
-    // 🔹 Eliminar carpeta (borra físicamente)
-    fun deleteFolder(folderName: String): Boolean {
-        return try {
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val folder = File(picturesDir, folderName)
-            if (!folder.exists()) {
-                showToast("⚠️ No se encontró la carpeta a eliminar")
-                return false
-            }
-
-            folder.deleteRecursively()
-            MediaScannerConnection.scanFile(getApplication(), arrayOf(folder.absolutePath), null, null)
-            loadFolders()
-            showToast("🗑️ Carpeta '$folderName' eliminada")
-            true
-        } catch (e: Exception) {
-            showToast("⚠️ Error al eliminar carpeta: ${e.localizedMessage}")
-            Log.e(logTag, "Error al eliminar carpeta", e)
-            false
-        }
-    }
-
-    // 🔹 Renombrar carpeta
-    fun renameFolder(oldName: String, newName: String): Boolean {
-        return try {
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val oldFolder = File(picturesDir, oldName)
-            val newFolder = File(picturesDir, newName)
-
-            if (!oldFolder.exists()) {
-                showToast("⚠️ No se encontró la carpeta '$oldName'")
-                return false
-            }
-            if (newFolder.exists()) {
-                showToast("⚠️ Ya existe una carpeta llamada '$newName'")
-                return false
-            }
-
-            val success = oldFolder.renameTo(newFolder)
-            if (!success) {
-                showToast("⚠️ No se pudo renombrar la carpeta (permiso o ruta denegada)")
-                return false
-            }
-
-            MediaScannerConnection.scanFile(
-                getApplication(),
-                arrayOf(newFolder.absolutePath),
-                null
-            ) { path, _ -> Log.d(logTag, "Escaneado rename: $path") }
-
-            loadFolders()
-            showToast("✏️ Carpeta renombrada a '$newName'")
-            true
-        } catch (e: Exception) {
-            showToast("⚠️ Error al renombrar carpeta: ${e.localizedMessage}")
-            Log.e(logTag, "Error al renombrar carpeta", e)
-            false
-        }
-    }
-
-    fun moveImagesToFolder(uris: List<Uri>, targetFolderName: String): Boolean {
-        return try {
-            val app = getApplication<Application>()
-            val resolver = app.contentResolver
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val targetDir = File(picturesDir, targetFolderName)
-
-            if (!targetDir.exists()) {
-                showToast("⚠️ Carpeta destino no encontrada")
-                return false
-            }
-
-            var movedCount = 0
-
-            for (uri in uris) {
-                try {
-                    // Obtener nombre del archivo original desde MediaStore
-                    val name = resolver.query(
-                        uri,
-                        arrayOf(MediaStore.Images.Media.DISPLAY_NAME),
-                        null, null, null
-                    )?.use { cursor ->
-                        val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                        cursor.moveToFirst()
-                        cursor.getString(nameIndex)
-                    } ?: continue
-
-                    val inputStream = resolver.openInputStream(uri) ?: continue
-                    val outputFile = File(targetDir, name)
-                    val outputStream = outputFile.outputStream()
-
-                    inputStream.use { input ->
-                        outputStream.use { output ->
-                            input.copyTo(output)
+            // SD (SAF)
+            sdCardUri?.let { tree ->
+                val root = DocumentFile.fromTreeUri(context, tree)
+                root?.listFiles()
+                    ?.filter { it.isDirectory && it.name?.startsWith(".") != true }
+                    ?.forEach { dir ->
+                        val images = dir.listFiles()
+                            .filter { d -> d.isFile && (d.name?.substringAfterLast('.')?.lowercase() in listOf("jpg","jpeg","png","webp")) }
+                        if (images.isNotEmpty()) {
+                            val thumb = images.firstOrNull()
+                            result += GalleryFolder(
+                                name = dir.name ?: "(sin nombre)",
+                                path = dir.uri.toString(),
+                                thumbnailUri = thumb?.uri,
+                                imageCount = images.size
+                            )
                         }
                     }
-
-                    // Borrar original
-                    resolver.delete(uri, null, null)
-                    movedCount++
-
-                    // Escanear archivo nuevo
-                    MediaScannerConnection.scanFile(app, arrayOf(outputFile.absolutePath), null, null)
-
-                } catch (e: Exception) {
-                    Log.e(logTag, "Error al mover imagen: ${e.localizedMessage}")
-                }
             }
 
-            if (movedCount > 0) {
-                loadFolders()
-                loadImages()
-                showToast("📂 $movedCount imagen(es) movida(s) a '$targetFolderName'")
-                true
-            } else {
-                showToast("⚠️ No se movió ninguna imagen (restricciones del sistema o URIs inválidas)")
-                false
-            }
-
-        } catch (e: Exception) {
-            showToast("⚠️ Error al mover imágenes: ${e.localizedMessage}")
-            Log.e(logTag, "Error al mover imágenes", e)
-            false
+            _folders.value = result.sortedBy { it.name.lowercase() }
         }
     }
 
+    // ------------------ Imágenes ------------------
+
+    fun loadImages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            val list = pictures
+                .walkTopDown()
+                .filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png","webp") }
+                .sortedByDescending { it.lastModified() }
+                .map { Uri.fromFile(it) }
+                .toList()
+            _images.value = list
+        }
+    }
+
+    fun loadImagesFromFolder(folderName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), folderName)
+            val list = folder.listFiles()
+                ?.filter { it.isFile && it.extension.lowercase() in listOf("jpg","jpeg","png","webp") }
+                ?.sortedByDescending { it.lastModified() }
+                ?.map { Uri.fromFile(it) }
+                ?: emptyList()
+            _images.value = list
+        }
+    }
+
+    // ------------------ Carpetas CRUD ------------------
+
+    fun createFolder(name: String): Boolean = try {
+        if (sdCardUri != null) {
+            val root = DocumentFile.fromTreeUri(context, sdCardUri!!)
+            root?.findFile(name) ?: root?.createDirectory(name)
+            true
+        } else {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), name)
+            if (!dir.exists()) dir.mkdirs() else true
+        }
+    } catch (e: Exception) {
+        e.printStackTrace(); false
+    }
+
+    fun deleteFolder(name: String): Boolean = try {
+        val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), name)
+        if (folder.exists()) {
+            folder.deleteRecursively()
+            scanPaths(folder.absolutePath)
+            true
+        } else false
+    } catch (e: Exception) {
+        e.printStackTrace(); false
+    }
+
+    fun renameFolder(oldName: String, newName: String): Boolean = try {
+        val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val old = File(pictures, oldName)
+        val neu = File(pictures, newName)
+        val ok = old.renameTo(neu)
+        if (ok) scanPaths(neu.absolutePath)
+        ok
+    } catch (e: Exception) {
+        e.printStackTrace(); false
+    }
+
+    // ------------------ Mover imágenes ------------------
+
+    fun moveImagesToFolder(selectedUris: List<Uri>, folderName: String): Boolean {
+        return try {
+            val cr: ContentResolver = context.contentResolver
+
+            if (sdCardUri != null) {
+                // --- Destino en SD ---
+                val root = DocumentFile.fromTreeUri(context, sdCardUri!!) ?: return false
+                val target = root.findFile(folderName) ?: root.createDirectory(folderName) ?: return false
+
+                for (src in selectedUris) {
+                    val fileName = getDisplayNameSmart(src)
+                    val inStream: InputStream = openInputStreamSmart(src) ?: continue
+
+                    val mime = when (fileName.substringAfterLast('.', "").lowercase()) {
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "image/jpeg"
+                    }
+
+                    val newDoc = target.createFile(mime, fileName) ?: continue
+                    val outStream: OutputStream = cr.openOutputStream(newDoc.uri) ?: continue
+
+                    inStream.use { input -> outStream.use { output -> input.copyTo(output) } }
+
+                    // borrar origen
+                    try { cr.delete(src, null, null) } catch (_: Exception) {
+                        if (src.scheme == "file") File(src.path ?: "").delete()
+                    }
+
+                    scanPaths(fileName)
+                }
+
+                // Refresca listas
+                loadFolders()
+                loadImagesFromFolder(folderName)
+                true
+
+            } else {
+                // --- Destino interno ---
+                val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                val dstDir = File(pictures, folderName)
+                if (!dstDir.exists()) dstDir.mkdirs()
+
+                for (src in selectedUris) {
+                    val srcFile = if (src.scheme == "file") File(src.path ?: "") else null
+                    val fileName = srcFile?.name ?: getDisplayNameSmart(src)
+                    val dstFile = File(dstDir, fileName)
+
+                    if (srcFile != null && srcFile.exists()) {
+                        val moved = srcFile.renameTo(dstFile)
+                        if (!moved) {
+                            srcFile.copyTo(dstFile, overwrite = true)
+                            srcFile.delete()
+                        }
+                        scanPaths(srcFile.absolutePath, dstFile.absolutePath)
+                    } else {
+                        val inStream = cr.openInputStream(src) ?: continue
+                        dstFile.outputStream().use { out -> inStream.use { inp -> inp.copyTo(out) } }
+                        try { cr.delete(src, null, null) } catch (_: Exception) {}
+                        scanPaths(dstFile.absolutePath)
+                    }
+                }
+
+                loadFolders()
+                loadImagesFromFolder(folderName)
+                true
+            }
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
 }

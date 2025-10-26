@@ -1,7 +1,9 @@
 package com.lucianolupo95.gallery
 
 import android.app.RecoverableSecurityException
+import android.content.Intent
 import android.content.IntentSender
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -12,13 +14,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable // ⬅️ IMPORT CLAVE
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import coil.compose.rememberAsyncImagePainter
 import com.lucianolupo95.gallery.ui.ImageDetailScreen
 import com.lucianolupo95.gallery.ui.MainScreen
 import com.lucianolupo95.gallery.ui.theme.GalleryTheme
@@ -29,12 +36,18 @@ import kotlinx.coroutines.*
 class MainActivity : ComponentActivity() {
 
     private lateinit var permissionManager: PermissionManager
+    private var sdCardUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         permissionManager = PermissionManager(this)
         permissionManager.requestPermission()
+
+        // Recuperar permiso persistente SAF si existiera
+        contentResolver.persistedUriPermissions.firstOrNull()?.let {
+            sdCardUri = it.uri
+        }
 
         setContent {
             var isSelectionMode by remember { mutableStateOf(false) }
@@ -45,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 val folders by viewModel.folders.collectAsState()
 
                 var selectedIndex by remember { mutableStateOf<Int?>(null) }
-                var selectedImages by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+                var selectedImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
                 var currentFolder by remember { mutableStateOf<String?>(null) }
                 var showFolders by remember { mutableStateOf(true) }
@@ -56,8 +69,23 @@ class MainActivity : ComponentActivity() {
                 // Cargar datos tras permisos
                 LaunchedEffect(permissionManager.hasPermission.value) {
                     if (permissionManager.hasPermission.value) {
+                        viewModel.sdCardUri = sdCardUri
                         viewModel.loadFolders()
                         viewModel.loadImages()
+                    }
+                }
+
+                // SAF: elegir carpeta SD
+                val sdAccessLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocumentTree()
+                ) { uri ->
+                    if (uri != null) {
+                        sdCardUri = uri
+                        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        contentResolver.takePersistableUriPermission(uri, flags)
+                        viewModel.sdCardUri = uri
+                        viewModel.loadFolders()
+                        Toast.makeText(this, "📂 Acceso concedido a la tarjeta SD", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -69,18 +97,17 @@ class MainActivity : ComponentActivity() {
                         delay(300)
                         if (currentFolder == null) viewModel.loadImages()
                         else viewModel.loadImagesFromFolder(currentFolder!!)
-                        Toast.makeText(
-                            this@MainActivity,
-                            "🗑️ Imagen eliminada (recargando galería)",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(this@MainActivity, "🗑️ Imagen eliminada (recargando galería)", Toast.LENGTH_SHORT).show()
                         selectedIndex = null
                     }
                 }
 
-                Surface(modifier = Modifier, color = MaterialTheme.colorScheme.background) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     when {
-                        // Vista de detalle
+                        // Detalle
                         selectedIndex != null -> {
                             ImageDetailScreen(
                                 imageUris = images,
@@ -90,61 +117,39 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         try {
                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                                val pendingIntent = MediaStore.createDeleteRequest(
-                                                    contentResolver,
-                                                    listOf(uri)
-                                                )
+                                                val pending = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
                                                 deleteLauncher.launch(
-                                                    IntentSenderRequest.Builder(
-                                                        pendingIntent.intentSender
-                                                    ).build()
+                                                    IntentSenderRequest.Builder(pending.intentSender).build()
                                                 )
                                             } else {
                                                 withContext(Dispatchers.IO) {
                                                     val deleted = contentResolver.delete(uri, null, null)
                                                     withContext(Dispatchers.Main) {
                                                         if (deleted > 0) {
-                                                            Toast.makeText(
-                                                                this@MainActivity,
-                                                                "🗑️ Imagen eliminada correctamente",
-                                                                Toast.LENGTH_SHORT
-                                                            ).show()
+                                                            Toast.makeText(this@MainActivity, "🗑️ Imagen eliminada", Toast.LENGTH_SHORT).show()
                                                         } else {
-                                                            Toast.makeText(
-                                                                this@MainActivity,
-                                                                "⚠️ No se pudo eliminar la imagen",
-                                                                Toast.LENGTH_SHORT
-                                                            ).show()
+                                                            Toast.makeText(this@MainActivity, "⚠️ No se pudo eliminar", Toast.LENGTH_SHORT).show()
                                                         }
                                                         selectedIndex = null
                                                         delay(300)
-                                                        if (currentFolder == null)
-                                                            viewModel.loadImages()
-                                                        else
-                                                            viewModel.loadImagesFromFolder(currentFolder!!)
+                                                        if (currentFolder == null) viewModel.loadImages()
+                                                        else viewModel.loadImagesFromFolder(currentFolder!!)
                                                     }
                                                 }
                                             }
                                         } catch (e: RecoverableSecurityException) {
-                                            val intentSender: IntentSender =
-                                                e.userAction.actionIntent.intentSender
-                                            deleteLauncher.launch(
-                                                IntentSenderRequest.Builder(intentSender).build()
-                                            )
+                                            val sender: IntentSender = e.userAction.actionIntent.intentSender
+                                            deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
                                         } catch (e: Exception) {
                                             e.printStackTrace()
-                                            Toast.makeText(
-                                                this@MainActivity,
-                                                "⚠️ Error inesperado al eliminar",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Toast.makeText(this@MainActivity, "⚠️ Error inesperado", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
                             )
                         }
 
-                        // Vista normal (carpetas o galería)
+                        // Principal
                         else -> {
                             MainScreen(
                                 hasPermission = permissionManager.hasPermission.value,
@@ -152,7 +157,6 @@ class MainActivity : ComponentActivity() {
                                 selectedImages = selectedImages,
                                 onImageClick = { index ->
                                     if (isSelectionMode) {
-                                        // Selección directa si ya hay selección
                                         val image = images[index]
                                         selectedImages = if (selectedImages.contains(image)) {
                                             selectedImages - image
@@ -165,17 +169,17 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onRequestPermissionClick = { permissionManager.requestPermission() },
                                 folders = folders,
-                                onFolderClick = { folderName ->
-                                    currentFolder = folderName
+                                onFolderClick = { name ->
+                                    currentFolder = name
                                     showFolders = false
-                                    viewModel.loadImagesFromFolder(folderName)
+                                    viewModel.loadImagesFromFolder(name)
                                     selectedImages = emptyList()
                                     isSelectionMode = false
                                 },
                                 onShowAllClick = {
                                     currentFolder = null
-                                    viewModel.loadImages()
                                     showFolders = false
+                                    viewModel.loadImages()
                                     selectedImages = emptyList()
                                     isSelectionMode = false
                                 },
@@ -188,48 +192,35 @@ class MainActivity : ComponentActivity() {
                                     viewModel.loadFolders()
                                 },
                                 onCreateFolder = { name ->
-                                    val success = viewModel.createFolder(name)
-                                    Toast.makeText(
-                                        this,
-                                        if (success) "📁 Carpeta '$name' creada"
-                                        else "⚠️ Error al crear carpeta",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    val ok = viewModel.createFolder(name)
+                                    Toast.makeText(this, if (ok) "📁 Carpeta creada" else "⚠️ No se pudo crear", Toast.LENGTH_SHORT).show()
                                 },
                                 onDeleteFolder = { name ->
-                                    val success = viewModel.deleteFolder(name)
-                                    Toast.makeText(
-                                        this,
-                                        if (success) "🗑️ Carpeta '$name' eliminada"
-                                        else "⚠️ No se pudo eliminar carpeta",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    val ok = viewModel.deleteFolder(name)
+                                    Toast.makeText(this, if (ok) "🗑️ Carpeta eliminada" else "⚠️ No se pudo eliminar", Toast.LENGTH_SHORT).show()
                                 },
-                                onRenameFolder = { oldName, newName ->
-                                    val success = viewModel.renameFolder(oldName, newName)
-                                    Toast.makeText(
-                                        this,
-                                        if (success) "✏️ Carpeta renombrada"
-                                        else "⚠️ Error al renombrar carpeta",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                onRenameFolder = { old, new ->
+                                    val ok = viewModel.renameFolder(old, new)
+                                    Toast.makeText(this, if (ok) "✏️ Carpeta renombrada" else "⚠️ No se pudo renombrar", Toast.LENGTH_SHORT).show()
                                 },
                                 currentFolder = currentFolder,
                                 onSelectionChange = { selectedImages = it },
-                                onMoveSelectedClick = {
-                                    if (selectedImages.isNotEmpty()) showMoveDialog = true
-                                },
+                                onMoveSelectedClick = { if (selectedImages.isNotEmpty()) showMoveDialog = true },
                                 onCancelSelection = {
                                     selectedImages = emptyList()
                                     isSelectionMode = false
                                 },
                                 isSelectionMode = isSelectionMode,
                                 onToggleSelectionMode = { isSelectionMode = !isSelectionMode },
-                                onSelectionModeChange = { mode -> isSelectionMode = mode }
+                                onSelectionModeChange = { mode -> isSelectionMode = mode },
+                                isSdStorage = sdCardUri != null
                             )
 
-                            // 🔹 Diálogo de "Mover a carpeta"
+                            // --- Diálogo "Mover a carpeta" ---
                             if (showMoveDialog && selectedImages.isNotEmpty()) {
+                                var showNewFolderDialog by remember { mutableStateOf(false) }
+                                var newFolderName by remember { mutableStateOf("") }
+
                                 AlertDialog(
                                     onDismissRequest = { showMoveDialog = false },
                                     title = { Text("Mover a carpeta") },
@@ -237,27 +228,122 @@ class MainActivity : ComponentActivity() {
                                         Column {
                                             Text("Seleccioná la carpeta de destino:")
                                             Spacer(modifier = Modifier.height(8.dp))
-                                            folders.forEach { folder ->
-                                                TextButton(onClick = {
+
+                                            LazyColumn(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(max = 360.dp)
+                                            ) {
+                                                items(folders) { folder ->
+                                                    ListItem(
+                                                        headlineContent = { Text(folder.name) },
+                                                        supportingContent = {
+                                                            Text("${folder.imageCount} imágenes")
+                                                        },
+                                                        leadingContent = {
+                                                            if (folder.thumbnailUri != null) {
+                                                                Image(
+                                                                    painter = rememberAsyncImagePainter(folder.thumbnailUri),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(40.dp)
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Folder,
+                                                                    contentDescription = null
+                                                                )
+                                                            }
+                                                        },
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(horizontal = 4.dp)
+                                                            .clickable {
+                                                                Toast.makeText(
+                                                                    this@MainActivity,
+                                                                    "Moviendo ${selectedImages.size} a '${folder.name}'…",
+                                                                    Toast.LENGTH_SHORT
+                                                                ).show()
+
+                                                                scope.launch {
+                                                                    val ok = viewModel.moveImagesToFolder(
+                                                                        selectedImages,
+                                                                        folder.name
+                                                                    )
+
+                                                                    Toast.makeText(
+                                                                        this@MainActivity,
+                                                                        if (ok) "✅ Movimiento completado" else "⚠️ Error al mover",
+                                                                        Toast.LENGTH_SHORT
+                                                                    ).show()
+
+                                                                    // cerrar y refrescar
+                                                                    showMoveDialog = false
+                                                                    selectedImages = emptyList()
+                                                                    isSelectionMode = false
+
+                                                                    if (currentFolder == null)
+                                                                        viewModel.loadImages()
+                                                                    else
+                                                                        viewModel.loadImagesFromFolder(currentFolder!!)
+
+                                                                    viewModel.loadFolders()
+                                                                }
+                                                            }
+                                                    )
+                                                    Divider()
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            TextButton(onClick = { showNewFolderDialog = true }) {
+                                                Text("➕ Crear nueva carpeta y mover aquí")
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            TextButton(onClick = { showMoveDialog = false }) {
+                                                Text("Cancelar", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    },
+                                    confirmButton = {}
+                                )
+
+                                // Crear carpeta y mover en un paso
+                                if (showNewFolderDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = { showNewFolderDialog = false },
+                                        title = { Text("Nueva carpeta") },
+                                        text = {
+                                            OutlinedTextField(
+                                                value = newFolderName,
+                                                onValueChange = { newFolderName = it },
+                                                label = { Text("Nombre de la carpeta") },
+                                                singleLine = true
+                                            )
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = {
+                                                val name = newFolderName.trim()
+                                                if (name.isNotEmpty()) {
                                                     scope.launch {
-                                                        val success = viewModel.moveImagesToFolder(
-                                                            selectedImages, folder.name
-                                                        )
+                                                        val created = viewModel.createFolder(name)
+                                                        val moved = viewModel.moveImagesToFolder(selectedImages, name)
+
                                                         Toast.makeText(
                                                             this@MainActivity,
-                                                            if (success)
-                                                                "📦 Imágenes movidas a '${folder.name}'"
-                                                            else
-                                                                "⚠️ Error al mover imágenes",
+                                                            when {
+                                                                created && moved -> "📂 '$name' creada y ${selectedImages.size} movidas"
+                                                                moved -> "📦 Imágenes movidas a '$name'"
+                                                                else -> "⚠️ Error al mover"
+                                                            },
                                                             Toast.LENGTH_SHORT
                                                         ).show()
 
-                                                        // Cerrar diálogo y limpiar selección/modo
+                                                        showNewFolderDialog = false
                                                         showMoveDialog = false
                                                         selectedImages = emptyList()
                                                         isSelectionMode = false
 
-                                                        // Refrescar vista actual SIN cambiar de carpeta
                                                         if (currentFolder == null)
                                                             viewModel.loadImages()
                                                         else
@@ -265,18 +351,16 @@ class MainActivity : ComponentActivity() {
 
                                                         viewModel.loadFolders()
                                                     }
-                                                }) {
-                                                    Text(folder.name)
                                                 }
+                                            }) { Text("Crear y mover") }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showNewFolderDialog = false }) {
+                                                Text("Cancelar")
                                             }
                                         }
-                                    },
-                                    confirmButton = {
-                                        TextButton(onClick = { showMoveDialog = false }) {
-                                            Text("Cancelar")
-                                        }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
